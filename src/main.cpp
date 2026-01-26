@@ -1,7 +1,8 @@
 #include <HttpServer.hpp>
 
 #include <csignal>
-#include <iostream>
+#include <cstring>
+#include <print>
 
 static HttpServer* gServer = nullptr;
 
@@ -13,9 +14,20 @@ void signalHandler(int)
     }
 }
 
-int main()
+int main(int argc, char* argv[])
 {
     std::signal(SIGINT, signalHandler);
+
+    bool prod = false;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "-prod") == 0)
+        {
+            prod = true;
+        }
+    }
+
+    int port = prod ? 443 : 8443;
 
     HttpServer server;
     gServer = &server;
@@ -42,13 +54,10 @@ int main()
         return response;
     });
 
-    std::cout << "Starting HTTPS server on port 8443..." << std::endl;
-    std::cout << "Test with:" << std::endl;
-    std::cout << "  curl -k https://localhost:8443/" << std::endl;
-    std::cout << "  curl -k https://localhost:8443/api/health" << std::endl;
-    std::cout << "Press Ctrl+C to stop." << std::endl;
+    std::println("Starting HTTPS server on port {}...", port);
+    std::println("Press Ctrl+C to stop.");
 
-    server.listen(8443);
+    server.listen(port);
     server.run();
 
     return 0;
