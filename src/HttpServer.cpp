@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include <poll.h>
+
 #include <cstring>
 #include <fstream>
 #include <filesystem>
@@ -22,6 +24,11 @@ public:
     void setStaticRoot(const std::string& path)
     {
         mStaticRoot = path;
+    }
+
+    void setHostname(const std::string& hostname)
+    {
+        mHostname = hostname;
     }
 
     void addRoute(const std::string& method, const std::string& path, Handler handler)
@@ -62,34 +69,103 @@ public:
         sea_log("HTTPS server listening on port {}", port);
     }
 
+    void listenHttpRedirect(int port)
+    {
+        mHttpRedirectFd = socket(AF_INET, SOCK_STREAM, 0);
+        if (mHttpRedirectFd < 0)
+        {
+            throw FlushingError{"Failed to create HTTP redirect socket"};
+        }
+
+        int opt = 1;
+        if (setsockopt(mHttpRedirectFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+        {
+            throw FlushingError{"Failed to set SO_REUSEADDR on HTTP redirect socket"};
+        }
+
+        struct sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(port);
+
+        if (bind(mHttpRedirectFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0)
+        {
+            throw FlushingError{std::format("Failed to bind HTTP redirect to port {}", port)};
+        }
+
+        if (::listen(mHttpRedirectFd, 10) < 0)
+        {
+            throw FlushingError{"Failed to listen on HTTP redirect socket"};
+        }
+
+        sea_log("HTTP redirect server listening on port {}", port);
+    }
+
     void run()
     {
         mRunning = true;
 
         while (mRunning)
         {
-            struct sockaddr_in clientAddr{};
-            socklen_t clientLen = sizeof(clientAddr);
+            std::vector<pollfd> fds;
+            fds.push_back({mListenFd, POLLIN, 0});
+            if (mHttpRedirectFd >= 0)
+            {
+                fds.push_back({mHttpRedirectFd, POLLIN, 0});
+            }
 
-            int clientFd = ::accept(mListenFd, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
-            if (clientFd < 0)
+            int ret = poll(fds.data(), fds.size(), 1000);
+            if (ret < 0)
             {
                 if (mRunning)
                 {
-                    sea_log("Accept failed: {}", strerror(errno));
+                    sea_log("Poll failed: {}", strerror(errno));
                 }
                 continue;
             }
-
-            sea_log("Connection from {}", inet_ntoa(clientAddr.sin_addr));
-
-            try
+            if (ret == 0)
             {
-                handleConnection(clientFd);
+                continue;  // Timeout, check mRunning
             }
-            catch (const std::exception& e)
+
+            // Check HTTPS socket
+            if (fds[0].revents & POLLIN)
             {
-                sea_log("Error handling connection: {}", e.what());
+                struct sockaddr_in clientAddr{};
+                socklen_t clientLen = sizeof(clientAddr);
+                int clientFd = ::accept(mListenFd, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
+                if (clientFd >= 0)
+                {
+                    sea_log("HTTPS connection from {}", inet_ntoa(clientAddr.sin_addr));
+                    try
+                    {
+                        handleConnection(clientFd);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        sea_log("Error handling HTTPS connection: {}", e.what());
+                    }
+                }
+            }
+
+            // Check HTTP redirect socket
+            if (fds.size() > 1 && (fds[1].revents & POLLIN))
+            {
+                struct sockaddr_in clientAddr{};
+                socklen_t clientLen = sizeof(clientAddr);
+                int clientFd = ::accept(mHttpRedirectFd, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
+                if (clientFd >= 0)
+                {
+                    sea_log("HTTP redirect for {}", inet_ntoa(clientAddr.sin_addr));
+                    try
+                    {
+                        handleHttpRedirect(clientFd);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        sea_log("Error handling HTTP redirect: {}", e.what());
+                    }
+                }
             }
         }
     }
@@ -102,9 +178,48 @@ public:
             close(mListenFd);
             mListenFd = -1;
         }
+        if (mHttpRedirectFd >= 0)
+        {
+            close(mHttpRedirectFd);
+            mHttpRedirectFd = -1;
+        }
     }
 
 private:
+    void handleHttpRedirect(int clientFd)
+    {
+        // Read enough to get the request line (we just need the path)
+        char buffer[4096];
+        ssize_t bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
+
+        std::string path = "/";
+        if (bytesRead > 0)
+        {
+            buffer[bytesRead] = '\0';
+            // Parse "GET /path HTTP/1.1"
+            char* firstSpace = strchr(buffer, ' ');
+            if (firstSpace)
+            {
+                char* secondSpace = strchr(firstSpace + 1, ' ');
+                if (secondSpace)
+                {
+                    path = std::string(firstSpace + 1, secondSpace);
+                }
+            }
+        }
+
+        std::string response = std::format(
+            "HTTP/1.1 301 Moved Permanently\r\n"
+            "Location: https://{}{}\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            mHostname, path);
+
+        send(clientFd, response.data(), response.size(), 0);
+        close(clientFd);
+    }
+
     void handleConnection(int clientFd)
     {
         WolfSslServerConnection conn(clientFd);
@@ -379,7 +494,9 @@ private:
 
     std::unordered_map<std::string, Handler> mRoutes;
     std::string mStaticRoot;
+    std::string mHostname;
     int mListenFd{-1};
+    int mHttpRedirectFd{-1};
     int mPort{0};
     bool mRunning{false};
 
@@ -397,6 +514,11 @@ void HttpServer::setStaticRoot(const std::string& path)
     mImpl->setStaticRoot(path);
 }
 
+void HttpServer::setHostname(const std::string& hostname)
+{
+    mImpl->setHostname(hostname);
+}
+
 void HttpServer::addRoute(const std::string& method, const std::string& path, Handler handler)
 {
     mImpl->addRoute(method, path, std::move(handler));
@@ -405,6 +527,11 @@ void HttpServer::addRoute(const std::string& method, const std::string& path, Ha
 void HttpServer::listen(int port)
 {
     mImpl->listen(port);
+}
+
+void HttpServer::listenHttpRedirect(int port)
+{
+    mImpl->listenHttpRedirect(port);
 }
 
 void HttpServer::run()

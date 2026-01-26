@@ -36,8 +36,10 @@ public:
     HttpServer& operator=(HttpServer&&) = delete;
 
     void setStaticRoot(const std::string& path);
+    void setHostname(const std::string& hostname);
     void addRoute(const std::string& method, const std::string& path, Handler handler);
     void listen(int port);
+    void listenHttpRedirect(int port);  // Listen for HTTP and redirect to HTTPS
     void run();  // Single-threaded accept loop
     void stop();
 

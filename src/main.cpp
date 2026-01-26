@@ -54,10 +54,20 @@ int main(int argc, char* argv[])
         return response;
     });
 
-    std::println("Starting HTTPS server on port {}...", port);
+    server.listen(port);
+
+    if (prod)
+    {
+        server.setHostname("allybag.org");
+        server.listenHttpRedirect(80);
+        std::println("Starting HTTPS server on port 443 with HTTP redirect on port 80...");
+    }
+    else
+    {
+        std::println("Starting HTTPS server on port {}...", port);
+    }
     std::println("Press Ctrl+C to stop.");
 
-    server.listen(port);
     server.run();
 
     return 0;
