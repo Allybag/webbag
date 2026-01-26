@@ -15,19 +15,19 @@ public:
     }
 };
 
-class WolfSSLConnection
+// Base class for SSL connections (both client and server)
+class WolfSslConnectionBase
 {
-    using TimestampNanos = std::int64_t;
 public:
-    WolfSSLConnection();
-    ~WolfSSLConnection();
+    using TimestampNanos = std::int64_t;
 
-    WolfSSLConnection(const WolfSSLConnection&) = delete;
-    WolfSSLConnection& operator=(const WolfSSLConnection&) = delete;
-    WolfSSLConnection(WolfSSLConnection&&) = delete;
-    WolfSSLConnection& operator=(WolfSSLConnection&&) = delete;
+    virtual ~WolfSslConnectionBase();
 
-    void connect(const std::string& hostname, int port);
+    WolfSslConnectionBase(const WolfSslConnectionBase&) = delete;
+    WolfSslConnectionBase& operator=(const WolfSslConnectionBase&) = delete;
+    WolfSslConnectionBase(WolfSslConnectionBase&&) = delete;
+    WolfSslConnectionBase& operator=(WolfSslConnectionBase&&) = delete;
+
     void disconnect();
 
     std::size_t write(const void* data, std::size_t size);
@@ -35,9 +35,27 @@ public:
 
     bool fin();
     TimestampNanos getLastRxTimestamp() const;
-    const std::string& getHostname() const;
 
-private:
+protected:
+    WolfSslConnectionBase();
+
     class Impl;
     std::unique_ptr<Impl> mImpl;
 };
+
+// Client SSL connection - connects to a remote server
+class WolfSslClientConnection : public WolfSslConnectionBase
+{
+public:
+    WolfSslClientConnection();
+    ~WolfSslClientConnection() override;
+
+    void connect(const std::string& hostname, int port);
+    const std::string& getHostname() const;
+
+private:
+    class ClientImpl;
+};
+
+// Backwards compatibility alias
+using WolfSSLConnection = WolfSslClientConnection;

@@ -1,7 +1,11 @@
-add_library(WebBagWolfConnection WolfSslConnection.cpp)
+add_library(WebBagWolfConnection WolfSslConnection.cpp WolfSslServer.cpp)
 target_link_libraries(WebBagWolfConnection PRIVATE wolfssl)
 
 add_library(WebBagHttpClient HttpClient.cpp)
 target_link_libraries(WebBagHttpClient PRIVATE WebBagWolfConnection)
 
+add_library(WebBagHttpServer HttpServer.cpp)
+target_link_libraries(WebBagHttpServer PRIVATE WebBagWolfConnection)
+
 add_executable(webbag main.cpp)
+target_link_libraries(webbag PRIVATE WebBagHttpServer)
