@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <sstream>
