@@ -20,6 +20,7 @@ class HttpServer::Impl
 {
 public:
     static constexpr size_t cMaxBufferSize = 64 * 1024;
+    static constexpr size_t cMaxBodySize = 10 * 1024 * 1024;  // 10 MB
 
     void setStaticRoot(const std::string& path)
     {
@@ -256,6 +257,10 @@ private:
         if (it != request.headers.end())
         {
             size_t contentLength = std::stoul(it->second);
+            if (contentLength > cMaxBodySize)
+            {
+                throw FlushingError{"Request body too large"};
+            }
             request.body = readExactBytes(contentLength);
         }
 
