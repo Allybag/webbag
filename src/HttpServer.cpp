@@ -410,6 +410,7 @@ private:
         }
 
         responseStream << "Connection: close\r\n";
+        responseStream << "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n";
         responseStream << "\r\n";
         responseStream << response.body;
 
