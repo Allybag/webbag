@@ -14,12 +14,13 @@ public:
     {
         setupSocket(mClientSocketFd);
 
-        mCtx = CTXPtr(wolfSSL_CTX_new(wolfTLSv1_3_server_method()));
+        mCtx = CTXPtr(wolfSSL_CTX_new(wolfTLS_server_method()));
         if (!mCtx)
         {
             throw FlushingError{"Failed to create server SSL context"};
         }
 
+        wolfSSL_CTX_SetMinVersion(mCtx.get(), TLS1_2_VERSION);
         wolfSSL_CTX_set_verify(mCtx.get(), WOLFSSL_VERIFY_NONE, nullptr);
 
         loadServerCertificate();
