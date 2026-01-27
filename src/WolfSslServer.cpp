@@ -1,6 +1,65 @@
 #include <WolfSslServer.hpp>
 #include <WolfSslConnectionImpl.hpp>
 
+// Shared server context for session caching
+class ServerContext
+{
+public:
+    static WOLFSSL_CTX* get()
+    {
+        static ServerContext instance;
+        return instance.mCtx;
+    }
+
+private:
+    ServerContext()
+    {
+        mCtx = wolfSSL_CTX_new(wolfTLS_server_method());
+        if (!mCtx)
+        {
+            throw FlushingError{"Failed to create server SSL context"};
+        }
+
+        wolfSSL_CTX_SetMinVersion(mCtx, TLS1_2_VERSION);
+        wolfSSL_CTX_set_verify(mCtx, WOLFSSL_VERIFY_NONE, nullptr);
+        wolfSSL_CTX_set_session_cache_mode(mCtx, WOLFSSL_SESS_CACHE_SERVER);
+        wolfSSL_CTX_set_timeout(mCtx, 3600);  // 1 hour session timeout
+
+        loadServerCertificate();
+    }
+
+    ~ServerContext()
+    {
+        if (mCtx)
+        {
+            wolfSSL_CTX_free(mCtx);
+        }
+    }
+
+    void loadServerCertificate()
+    {
+        const char* certFile = std::getenv("WOLF_SERVER_CERT");
+        const char* keyFile = std::getenv("WOLF_SERVER_KEY");
+
+        if (!certFile || !keyFile)
+        {
+            throw FlushingError{"WOLF_SERVER_CERT and WOLF_SERVER_KEY must be set"};
+        }
+
+        if (wolfSSL_CTX_use_certificate_file(mCtx, certFile, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS)
+        {
+            throw FlushingError{"Failed to load server certificate"};
+        }
+
+        if (wolfSSL_CTX_use_PrivateKey_file(mCtx, keyFile, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS)
+        {
+            throw FlushingError{"Failed to load server private key"};
+        }
+    }
+
+    WOLFSSL_CTX* mCtx{nullptr};
+};
+
 // Server-specific implementation
 class WolfSslServerConnection::ServerImpl : public WolfSslConnectionBase::Impl
 {
@@ -14,17 +73,9 @@ public:
     {
         setupSocket(mClientSocketFd);
 
-        mCtx = CTXPtr(wolfSSL_CTX_new(wolfTLS_server_method()));
-        if (!mCtx)
-        {
-            throw FlushingError{"Failed to create server SSL context"};
-        }
-
-        wolfSSL_CTX_SetMinVersion(mCtx.get(), TLS1_2_VERSION);
-        wolfSSL_CTX_set_verify(mCtx.get(), WOLFSSL_VERIFY_NONE, nullptr);
-
-        loadServerCertificate();
-        createSsl();
+        // Use shared context for session caching
+        mSharedCtx = ServerContext::get();
+        createSslFromSharedCtx();
 
         auto handshakeStart = std::chrono::high_resolution_clock::now();
 
@@ -41,32 +92,31 @@ public:
         auto handshakeDuration = std::chrono::duration_cast<std::chrono::microseconds>(
             handshakeEnd - handshakeStart);
 
-        sea_log("Server SSL handshake completed in {} mics", handshakeDuration.count());
+        bool resumed = wolfSSL_session_reused(mSsl.get());
+        sea_log("Server SSL handshake completed in {} mics{}", handshakeDuration.count(),
+                resumed ? " (resumed session)" : "");
     }
 
 private:
-    void loadServerCertificate()
+    void createSslFromSharedCtx()
     {
-        const char* certFile = std::getenv("WOLF_SERVER_CERT");
-        const char* keyFile = std::getenv("WOLF_SERVER_KEY");
-
-        if (!certFile || !keyFile)
+        wolfSSL_CTX_SetIORecv(mSharedCtx, customReceiveCallback);
+        mSsl = SSLPtr(wolfSSL_new(mSharedCtx));
+        if (!mSsl)
         {
-            throw FlushingError{"WOLF_SERVER_CERT and WOLF_SERVER_KEY must be set"};
+            throw FlushingError{"Failed to create SSL session"};
         }
 
-        if (wolfSSL_CTX_use_certificate_file(mCtx.get(), certFile, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS)
+        if (wolfSSL_set_fd(mSsl.get(), mSocketFd) != WOLFSSL_SUCCESS)
         {
-            throw FlushingError{"Failed to load server certificate"};
+            throw FlushingError{"Failed to set SSL socket"};
         }
 
-        if (wolfSSL_CTX_use_PrivateKey_file(mCtx.get(), keyFile, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS)
-        {
-            throw FlushingError{"Failed to load server private key"};
-        }
+        wolfSSL_SetIOReadCtx(mSsl.get(), this);
     }
 
     int mClientSocketFd;
+    WOLFSSL_CTX* mSharedCtx{nullptr};
 };
 
 // Server connection implementation
