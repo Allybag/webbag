@@ -337,9 +337,25 @@ private:
             return make404();
         }
 
+        // Try exact path, then .html extension, then directory index
         if (!std::filesystem::exists(filePath) || !std::filesystem::is_regular_file(filePath))
         {
-            return make404();
+            std::filesystem::path withHtml = filePath;
+            withHtml += ".html";
+            std::filesystem::path dirIndex = filePath / "index.html";
+
+            if (std::filesystem::is_regular_file(withHtml))
+            {
+                filePath = withHtml;
+            }
+            else if (std::filesystem::is_regular_file(dirIndex))
+            {
+                filePath = dirIndex;
+            }
+            else
+            {
+                return make404();
+            }
         }
 
         std::ifstream file(filePath, std::ios::binary);
