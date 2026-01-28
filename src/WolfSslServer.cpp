@@ -14,6 +14,11 @@ public:
 private:
     ServerContext()
     {
+        if (wolfSSL_Init() != WOLFSSL_SUCCESS)
+        {
+            throw FlushingError{"Failed to initialize WolfSSL"};
+        }
+
         mCtx = wolfSSL_CTX_new(wolfTLS_server_method());
         if (!mCtx)
         {
@@ -34,6 +39,7 @@ private:
         {
             wolfSSL_CTX_free(mCtx);
         }
+        wolfSSL_Cleanup();
     }
 
     void loadServerCertificate()

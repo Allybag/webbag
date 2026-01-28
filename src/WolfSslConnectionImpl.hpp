@@ -58,17 +58,11 @@ public:
         {
             wolfSSL_Debugging_ON();
         }
-
-        if (wolfSSL_Init() != WOLFSSL_SUCCESS)
-        {
-            throw FlushingError{"Failed to initialize WolfSSL"};
-        }
     }
 
     virtual ~Impl()
     {
         disconnect();
-        wolfSSL_Cleanup();
     }
 
     void setupSocket(int existingFd = -1)
