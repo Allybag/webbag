@@ -189,6 +189,10 @@ public:
 private:
     void handleHttpRedirect(int clientFd)
     {
+        // Set a receive timeout so a silent client can't block the server
+        struct timeval tv{.tv_sec = 5, .tv_usec = 0};
+        setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
         // Read enough to get the request line (we just need the path)
         char buffer[4096];
         ssize_t bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
