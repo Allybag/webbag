@@ -17,6 +17,7 @@ void signalHandler(int)
 int main(int argc, char* argv[])
 {
     std::signal(SIGINT, signalHandler);
+    std::signal(SIGPIPE, SIG_IGN);
 
     bool prod = false;
     for (int i = 1; i < argc; ++i)
