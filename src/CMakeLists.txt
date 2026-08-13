@@ -7,5 +7,5 @@ target_link_libraries(WebBagHttpClient PRIVATE WebBagWolfConnection)
 add_library(WebBagHttpServer HttpServer.cpp)
 target_link_libraries(WebBagHttpServer PRIVATE WebBagWolfConnection)
 
-add_executable(webbag main.cpp)
-target_link_libraries(webbag PRIVATE WebBagHttpServer)
+add_executable(webbag main.cpp Bughouse.cpp)
+target_link_libraries(webbag PRIVATE WebBagHttpServer glaze::glaze)

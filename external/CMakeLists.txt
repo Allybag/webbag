@@ -10,4 +10,5 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(seaplane)
 
 include(WolfSsl.cmake)
+include(Glaze.cmake)
 remove_definitions(-w)

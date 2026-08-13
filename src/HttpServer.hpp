@@ -38,6 +38,18 @@ public:
     void setStaticRoot(const std::string& path);
     void setHostname(const std::string& hostname);
     void addRoute(const std::string& method, const std::string& path, Handler handler);
+
+    // Route whose response leaves the connection open for later broadcast()
+    // pushes (e.g. Server-Sent Events). The handler supplies the response
+    // headers and any initial payload; no Content-Length or Connection: close
+    // headers are added.
+    void addStreamRoute(const std::string& method, const std::string& path, Handler handler);
+
+    // Write raw bytes to every open stream connection established via path
+    void broadcast(const std::string& path, const std::string& data);
+
+    // Called from run() after every poll iteration (at least ~1Hz)
+    void setTickHandler(std::function<void()> handler);
     void listen(int port);
     void listenHttpRedirect(int port);  // Listen for HTTP and redirect to HTTPS
     void run();  // Single-threaded accept loop

@@ -1,3 +1,4 @@
+#include <Bughouse.hpp>
 #include <HttpServer.hpp>
 
 #include <csignal>
@@ -54,6 +55,8 @@ int main(int argc, char* argv[])
         response.headers["Content-Length"] = std::to_string(response.body.length());
         return response;
     });
+
+    Bughouse bughouse(server, "bughouse-state.json");
 
     server.listen(port);
 

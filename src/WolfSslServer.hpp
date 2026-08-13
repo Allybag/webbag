@@ -8,12 +8,18 @@
 class WolfSslServerConnection : public WolfSslConnectionBase
 {
 public:
-    // Takes an already-connected socket fd from accept()
+    enum class HandshakeStatus { Done, WantRead, WantWrite };
+
+    // Takes an already-connected socket fd from accept() and switches it to
+    // non-blocking mode
     explicit WolfSslServerConnection(int clientSocketFd);
     ~WolfSslServerConnection() override;
 
-    // Performs wolfSSL_accept() handshake
-    void accept();
+    // Drives the wolfSSL_accept() handshake; on WantRead/WantWrite call again
+    // once the socket polls ready in that direction
+    HandshakeStatus tryAccept();
+
+    int socketFd() const;
 
 private:
     class ServerImpl;
